@@ -4,7 +4,9 @@ Lancement : streamlit run app/streamlit_app.py
 """
 
 import copy
+import json
 import sys
+import urllib.parse
 from pathlib import Path
 
 import numpy as np
@@ -270,11 +272,29 @@ def couches(extra=None):
     return layers + (extra or [])
 
 
+# Fond de carte Plan IGN (Géoplateforme) : public, gratuit, sans clé d'API. Les fonds
+# CARTO exigent désormais une clé hors de localhost. Style MapLibre passé en data: URI.
+FOND_IGN = "data:application/json;charset=utf-8," + urllib.parse.quote(json.dumps({
+    "version": 8,
+    "sources": {"ign": {
+        "type": "raster", "tileSize": 256, "maxzoom": 18,
+        "tiles": ["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+                  "&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM"
+                  "&FORMAT=image/png&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],
+        "attribution": "© IGN – Plan IGN"}},
+    "layers": [
+        {"id": "fond-uni", "type": "background", "paint": {"background-color": "#eef1f4"}},
+        {"id": "ign", "type": "raster", "source": "ign",
+         "paint": {"raster-saturation": -1, "raster-contrast": -0.35,
+                   "raster-brightness-min": 0.35, "raster-opacity": 0.85}}],
+}))
+
+
 def carte(layers, key, recul: float = 0.0):
     vue_carte = copy.copy(view)
     vue_carte.zoom = view.zoom - recul
     deck = pdk.Deck(layers=layers, initial_view_state=vue_carte, tooltip=TOOLTIP,
-                    map_style=pdk.map_styles.CARTO_LIGHT_NO_LABELS)
+                    map_style=FOND_IGN)
     return st.pydeck_chart(deck, height=640, key=key, on_select="rerun",
                            selection_mode="single-object")
 
@@ -484,6 +504,6 @@ else:
 
 st.divider()
 st.caption(
-    f"Source : {report.get('source', '?')}. Fond de carte © CARTO, © OpenStreetMap. "
+    f"Source : {report.get('source', '?')}. Fond de carte © IGN (Plan IGN). "
     "Indicateur de travail inspiré de l'APL (DREES), qui reste la référence officielle."
 )

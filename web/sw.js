@@ -3,13 +3,13 @@
  * - données : réseau d'abord, cache en secours (on voit toujours la dernière version) ;
  * - fond de carte : cache au fil de la navigation, limité en taille.
  */
-const VERSION = "medaccess-v2";
+const VERSION = "medaccess-v2.2";
 const COQUILLE = [
   "./", "index.html", "style.css", "app.js", "calc.js", "manifest.webmanifest",
   "vendor/maplibre-gl.js", "vendor/maplibre-gl.css",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
 ];
-const TUILES = "medaccess-tuiles";
+const TUILES = "medaccess-tuiles-ign";
 const MAX_TUILES = 400;
 
 self.addEventListener("install", (e) => {
@@ -53,7 +53,7 @@ async function tuile(req) {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
-  if (url.hostname.endsWith("basemaps.cartocdn.com")) { e.respondWith(tuile(e.request)); return; }
+  if (url.hostname === "data.geopf.fr") { e.respondWith(tuile(e.request)); return; }
   if (url.origin !== location.origin) return;
   if (url.pathname.endsWith("/data/communes.json")) { e.respondWith(reseauDabord(e.request)); return; }
   e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((r) => r || fetch(e.request)));

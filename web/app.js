@@ -59,7 +59,7 @@
     $("#bandeau-demo").hidden = !data.demo;
     $("#sources").innerHTML = `${echapper(data.source || "")}. Données du ${echapper(data.genere_le || "")}.
       Effectifs : Insee, Base permanente des équipements. Contours © IGN, populations © Insee,
-      fond de carte © CARTO, © contributeurs OpenStreetMap.`;
+      fond de carte © IGN (Plan IGN).`;
     $("#seuil").value = Math.round(etat.ratio * 100);
     construireInterfaceProfessions();
     etat.profs.forEach((p) => calculer(p.cle));
@@ -264,17 +264,23 @@
       style: {
         version: 8,
         sources: {
+          // Plan IGN (Géoplateforme) : service public, gratuit, sans clé d'API.
+          // (Les fonds CARTO exigent désormais une clé hors de localhost.)
           fond: {
-            type: "raster", tileSize: 256, maxzoom: 19,
-            tiles: ["a", "b", "c", "d"].map((s) => `https://${s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png`),
-            attribution: "© <a href='https://carto.com/attributions'>CARTO</a> © <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a>",
+            type: "raster", tileSize: 256, minzoom: 0, maxzoom: 18,
+            tiles: ["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+              + "&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM"
+              + "&FORMAT=image/png&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],
+            attribution: "Fond de carte © <a href='https://www.ign.fr/'>IGN</a> – Plan IGN",
           },
           communes: { type: "geojson", data: d.communes, promoteId: "code" },
           contour: { type: "geojson", data: { type: "Feature", properties: {}, geometry: d.contour } },
         },
         layers: [
           { id: "fond-uni", type: "background", paint: { "background-color": "#eef1f4" } },
-          { id: "fond", type: "raster", source: "fond", paint: { "raster-opacity": 0.9 } },
+          // Plan IGN passé en gris clair pour ne pas concurrencer les couleurs des communes
+          { id: "fond", type: "raster", source: "fond",
+            paint: { "raster-saturation": -1, "raster-contrast": -0.35, "raster-brightness-min": 0.35, "raster-opacity": 0.85 } },
           { id: "communes", type: "fill", source: "communes",
             paint: { "fill-color": ["coalesce", ["get", "couleur"], "#d1d5db"],
               "fill-opacity": ["case", ["boolean", ["feature-state", "survol"], false], 1, 0.86] } },
