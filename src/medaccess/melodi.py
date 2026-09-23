@@ -114,46 +114,82 @@ def _pick(columns: list[str], *candidates: str) -> str | None:
     return None
 
 
-def pick_csv_product(products: list[dict]) -> dict:
-    """Choisit le fichier CSV complet le plus récent d'un jeu Melodi."""
+def csv_products(products: list[dict]) -> list[dict]:
+    """Fichiers CSV d'un jeu Melodi, du plus récent au plus ancien (FR d'abord)."""
     csvs = [p for p in products if str(p.get("format", "")).upper() == "CSV"
             and p.get("accessURL")]
     if not csvs:
         raise ValueError("Aucun fichier CSV dans le catalogue du jeu.")
     fr = [p for p in csvs if str(p.get("language", "")).upper() == "FR"] or csvs
-    return max(fr, key=lambda p: p.get("modified") or p.get("issued") or "")
+    return sorted(fr, key=lambda p: p.get("modified") or p.get("issued") or "", reverse=True)
 
 
-def bpe_file_url() -> str:
-    """URL du fichier BPE complet.
+def pick_csv_product(products: list[dict]) -> dict:
+    """Choisit le fichier CSV complet le plus récent d'un jeu Melodi."""
+    return csv_products(products)[0]
+
+
+def bpe_file_urls() -> list[tuple[str, str]]:
+    """(identifiant, URL) des fichiers BPE candidats, le plus récent d'abord.
 
     L'identifiant du fichier change à chaque millésime (DS_BPE_2024_CSV_FR,
-    puis 2025…) et l'ancien est retiré : on le lit donc dans le catalogue
-    Melodi (/catalog/DS_BPE) au lieu de le figer dans le code.
+    puis 2025…) : on le lit dans le catalogue Melodi (/catalog/DS_BPE).
     BPE_FILE_ID dans .env force un identifiant précis si besoin.
     """
     if settings.bpe_file_id:
-        return f"{settings.melodi_url}/file/DS_BPE/{settings.bpe_file_id}"
+        return [(settings.bpe_file_id,
+                 f"{settings.melodi_url}/file/DS_BPE/{settings.bpe_file_id}")]
     meta = _get(f"{settings.melodi_url}/catalog/DS_BPE").json()
-    product = pick_csv_product(meta.get("product", []))
-    print(f"   BPE : fichier {product.get('id')} (publié le {product.get('issued', '?')[:10]})")
-    return product["accessURL"]
+    return [(p.get("id", "?"), p["accessURL"]) for p in csv_products(meta.get("product", []))]
+
+
+def lire_tableau(raw: bytes) -> pd.DataFrame:
+    """Lit un fichier Melodi quel que soit son emballage : zip, gzip ou CSV brut.
+
+    Dans un zip, on prend le plus gros CSV (les métadonnées sont petites).
+    Une page HTML ou un JSON d'erreur renvoyé à la place du fichier est signalé
+    avec son début, pour savoir ce que le serveur a vraiment répondu.
+    """
+    if raw[:2] == b"PK":
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            csvs = [i for i in zf.infolist() if i.filename.lower().endswith(".csv")]
+            if not csvs:
+                raise ValueError(f"Zip sans CSV : {zf.namelist()[:10]}")
+            raw = zf.read(max(csvs, key=lambda i: i.file_size).filename)
+    elif raw[:2] == b"\x1f\x8b":
+        import gzip
+        raw = gzip.decompress(raw)
+
+    debut = raw[:4096].decode("utf-8-sig", errors="ignore")
+    if debut.lstrip()[:1] in ("<", "{", "["):
+        raise ValueError(f"Réponse inattendue au lieu d'un CSV : {debut[:300]!r}")
+    sep = ";" if debut.count(";") > debut.count(",") else ","
+    return pd.read_csv(io.BytesIO(raw), sep=sep, dtype=str, low_memory=False,
+                       encoding="utf-8-sig")
+
+
+def _telecharger_bpe() -> pd.DataFrame:
+    """Télécharge le fichier BPE le plus récent lisible (repli sur les millésimes précédents)."""
+    erreurs = []
+    for ident, url in bpe_file_urls():
+        try:
+            df = lire_tableau(_get(url).content)
+            print(f"   BPE : fichier {ident} ({len(df):,} lignes)")
+            return df
+        except Exception as exc:  # noqa: BLE001
+            print(f"   BPE : fichier {ident} illisible ({exc}) — essai du suivant")
+            erreurs.append(f"{ident} : {exc}")
+    raise RuntimeError("Aucun fichier BPE lisible. " + " | ".join(erreurs))
 
 
 def _lire_bpe(departement: str) -> pd.DataFrame:
     """Lignes BPE du département : code commune, type d'équipement, nombre.
 
-    Le fichier est téléchargé en entier (CSV zippé) : c'est plus sûr que
-    d'interroger une API dont les noms de dimensions varient selon les millésimes.
+    Le fichier est téléchargé en entier : c'est plus sûr que d'interroger une
+    API dont les noms de dimensions varient selon les millésimes.
     Les noms de colonnes sont détectés parmi les variantes connues.
     """
-    raw = _get(bpe_file_url()).content
-    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-        csv_name = next(n for n in zf.namelist() if n.lower().endswith(".csv"))
-        sample = zf.read(csv_name)[:4096].decode("utf-8", errors="ignore")
-        sep = ";" if sample.count(";") > sample.count(",") else ","
-        df = pd.read_csv(zf.open(csv_name), sep=sep, dtype=str, low_memory=False)
-
+    df = _telecharger_bpe()
     cols = list(df.columns)
     geo_col = _pick(cols, "GEO", "DEPCOM", "CODGEO", "COM")
     type_col = _pick(cols, "FACILITY_TYPE", "TYPEQU", "BPE_TYPEQU")
