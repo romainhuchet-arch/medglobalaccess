@@ -42,25 +42,92 @@
   const idx = (code) => etat.communes.findIndex((c) => c.code === code);
 
   // --- Données et calcul ----------------------------------------------------
-  async function charger() {
-    const rep = await fetch("data/communes.json", { cache: "no-cache" });
+  // --- Départements -------------------------------------------------------
+  const deps = { liste: [], defaut: null, courant: null };
+  const normer = (x) => String(x).toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  const depDuLien = () => decodeURIComponent(location.hash.replace(/^#/, "")).toUpperCase();
+  const existe = (code) => deps.liste.some((d) => d.code === code);
+
+  async function chargerIndex() {
+    const rep = await fetch("data/departements.json", { cache: "no-cache" });
+    if (!rep.ok) throw new Error("liste des départements introuvable");
+    const idx = await rep.json();
+    deps.liste = idx.departements;
+    deps.defaut = idx.defaut;
+    $("#choix-dep").hidden = deps.liste.length < 2;
+  }
+
+  function depInitial() {
+    const lien = depDuLien();
+    if (existe(lien)) return lien;
+    let memo = null;
+    try { memo = localStorage.getItem("departement"); } catch (e) { /* stockage indisponible */ }
+    return existe(memo) ? memo : deps.defaut;
+  }
+
+  function ouvrirChoixDep() {
+    const d = $("#dialogue-dep");
+    d.hidden = false;
+    $("#filtre-dep").value = "";
+    rendreChoixDep();
+    setTimeout(() => $("#filtre-dep").focus(), 50);
+  }
+  const fermerChoixDep = () => { $("#dialogue-dep").hidden = true; };
+
+  function rendreChoixDep() {
+    const q = normer($("#filtre-dep").value.trim());
+    const trouves = deps.liste.filter((d) => !q || normer(d.nom).includes(q) || normer(d.code).startsWith(q));
+    $("#liste-dep").innerHTML = trouves.map((d) => `<li><button data-dep="${d.code}"${d.code === deps.courant ? ' aria-current="true"' : ""}>
+      <span class="code-dep">${d.code}</span><span class="nom">${echapper(d.nom)}</span>
+      <span class="sous">${d.communes} communes</span></button></li>`).join("")
+      || `<li class="vide">Aucun département ne correspond.</li>`;
+  }
+
+  async function choisirDepartement(code) {
+    fermerChoixDep();
+    if (!code || code === deps.courant) return;
+    $("#chargement").textContent = "Chargement du département…";
+    $("#chargement").classList.remove("fini");
+    try {
+      await charger(code);
+      if (carte) { rafraichirCarte(); } else { initCarte(); }
+    } catch (err) {
+      $("#chargement").textContent = `Impossible de charger ce département (${err.message}).`;
+      console.error(err);
+    }
+  }
+
+  // --- Données et calcul ----------------------------------------------------
+  async function charger(code) {
+    const rep = await fetch(`data/dep/${encodeURIComponent(code)}.json`, { cache: "no-cache" });
     if (!rep.ok) throw new Error("données introuvables");
     const data = await rep.json();
+    deps.courant = code;
+    try { localStorage.setItem("departement", code); } catch (e) { /* ignoré */ }
+    if (depDuLien() !== code) history.replaceState(null, "", `#${code}`);
+
     etat.data = data;
     etat.communes = data.communes.features.map((f) => f.properties);
     etat.profs = data.professions;
     etat.parCle = Object.fromEntries(etat.profs.map((p) => [p.cle, p]));
     etat.ratio = data.parametres.seuil_ratio;
+    etat.rayons = {}; etat.modeles = {}; etat.evals = {}; etat.cumul = new Set();
+    etat.selection = null; etat.sites = []; etat.classement = null;
     etat.profs.forEach((p) => { etat.rayons[p.cle] = p.rayon_km; etat.cumul.add(p.cle); });
-    etat.vue = etat.profSim = etat.profs[0].cle;
+    if (!etat.parCle[etat.vue] && etat.vue !== CUMUL) etat.vue = etat.profs[0].cle;
+    etat.profSim = etat.parCle[etat.profSim] ? etat.profSim : etat.profs[0].cle;
     etat.base = MedCalc.preparer(etat.communes);
 
-    $("#territoire").textContent = `Département ${data.departement} · ${etat.communes.length} communes`;
+    const nomDep = data.nom || `Département ${data.departement}`;
+    $("#nom-dep").textContent = `${nomDep} (${data.departement})`;
+    $("#territoire").textContent = `${etat.communes.length} communes`;
+    document.title = `MedAccess · ${nomDep}`;
     $("#bandeau-demo").hidden = !data.demo;
     $("#sources").innerHTML = `${echapper(data.source || "")}. Données du ${echapper(data.genere_le || "")}.
       Effectifs : Insee, Base permanente des équipements. Contours © IGN, populations © Insee,
       fond de carte © IGN (Plan IGN).`;
     $("#seuil").value = Math.round(etat.ratio * 100);
+    $("#recherche").value = "";
     construireInterfaceProfessions();
     etat.profs.forEach((p) => calculer(p.cle));
     rendre();
@@ -365,7 +432,19 @@
     carte.fitBounds(b, { padding: marges(), duration: anime ? 500 : 0, maxZoom: 11 });
   }
 
+  function rafraichirCarte() {
+    carte.getSource("contour").setData({ type: "Feature", properties: {}, geometry: etat.data.contour });
+    colorerCarte();
+    placerSites();
+    placerVilles();
+    cadrer(false);
+    $("#chargement").classList.add("fini");
+  }
+
+  let marqueursVilles = [];
   function placerVilles() {
+    marqueursVilles.forEach((m) => m.remove());
+    marqueursVilles = [];
     const gardees = [];
     for (const c of [...etat.communes].sort((a, b) => b.population - a.population)) {
       if (gardees.every((g) => Math.hypot((c.lat - g.lat) * 111, (c.lon - g.lon) * 76) > 16)) gardees.push(c);
@@ -374,7 +453,7 @@
     gardees.forEach((c) => {
       const el = document.createElement("div");
       el.className = "ville"; el.textContent = c.nom;
-      new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(carte);
+      marqueursVilles.push(new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(carte));
     });
   }
 
@@ -474,6 +553,16 @@
       if (carte && c) carte.easeTo({ center: [c.lon, c.lat], zoom: Math.max(carte.getZoom(), grandEcran() ? 9.5 : 8.6),
         offset: [(m.left - m.right) / 2, (m.top - m.bottom) / 2], duration: 500 });
     });
+    $("#choix-dep").onclick = ouvrirChoixDep;
+    $("#filtre-dep").oninput = rendreChoixDep;
+    $("#filtre-dep").onkeydown = (e) => {
+      if (e.key === "Escape") fermerChoixDep();
+      if (e.key === "Enter") { const b = $("#liste-dep button"); if (b) choisirDepartement(b.dataset.dep); }
+    };
+    $("#liste-dep").onclick = (e) => { const b = e.target.closest("button[data-dep]"); if (b) choisirDepartement(b.dataset.dep); };
+    $("#dialogue-dep").onclick = (e) => { if (e.target.id === "dialogue-dep") fermerChoixDep(); };
+    $("#fermer-dep").onclick = fermerChoixDep;
+    window.addEventListener("hashchange", () => { const c = depDuLien(); if (existe(c)) choisirDepartement(c); });
     $("#poignee").onclick = () => {
       $("#panneau").classList.toggle("reduit");
       setTimeout(() => carte && cadrer(), 260);
@@ -512,7 +601,8 @@
   // --- Démarrage ------------------------------------------------------------
   brancherInterface();
   brancherInstallation();
-  charger()
+  chargerIndex()
+    .then(() => charger(depInitial()))
     .then(initCarte)
     .catch((err) => {
       $("#chargement").textContent = `Impossible de charger les données (${err.message}).`;

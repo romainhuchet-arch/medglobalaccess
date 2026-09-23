@@ -12,6 +12,7 @@ InseeFrLab/melodi :
 
 from __future__ import annotations
 
+import functools
 import io
 import re
 import time
@@ -143,7 +144,7 @@ def bpe_file_urls() -> list[tuple[str, str]]:
     return [(p.get("id", "?"), p["accessURL"]) for p in csv_products(meta.get("product", []))]
 
 
-def lire_tableau(raw: bytes) -> pd.DataFrame:
+def lire_tableau(raw: bytes, colonnes: set[str] | None = None) -> pd.DataFrame:
     """Lit un fichier Melodi quel que soit son emballage : zip, gzip ou CSV brut.
 
     Dans un zip, on prend le plus gros CSV (les métadonnées sont petites).
@@ -164,17 +165,45 @@ def lire_tableau(raw: bytes) -> pd.DataFrame:
     if debut.lstrip()[:1] in ("<", "{", "["):
         raise ValueError(f"Réponse inattendue au lieu d'un CSV : {debut[:300]!r}")
     sep = ";" if debut.count(";") > debut.count(",") else ","
+    usecols = (lambda c: c.strip().upper() in colonnes) if colonnes else None
     return pd.read_csv(io.BytesIO(raw), sep=sep, dtype=str, low_memory=False,
-                       encoding="utf-8-sig")
+                       encoding="utf-8-sig", usecols=usecols)
 
 
-def _telecharger_bpe() -> pd.DataFrame:
-    """Télécharge le fichier BPE le plus récent lisible (repli sur les millésimes précédents)."""
+_COL_GEO = ("GEO", "DEPCOM", "CODGEO", "COM")
+_COL_TYPE = ("FACILITY_TYPE", "TYPEQU", "BPE_TYPEQU")
+_COL_VAL = ("OBS_VALUE", "NB_EQUIP", "NB")
+
+
+def _normaliser_bpe(df: pd.DataFrame) -> pd.DataFrame:
+    """(code commune, type d'équipement, nombre), équipements de santé (D…) seulement."""
+    cols = list(df.columns)
+    geo_col, type_col = _pick(cols, *_COL_GEO), _pick(cols, *_COL_TYPE)
+    value_col = _pick(cols, *_COL_VAL)
+    if not geo_col or not type_col:
+        raise ValueError(f"Colonnes BPE non reconnues : {cols[:15]}")
+    types = df[type_col].str.upper()
+    sante = types.str.startswith("D", na=False)
+    df = df[sante]
+    return pd.DataFrame({
+        "code": df[geo_col].map(lambda v: parse_geo(v)[0]),
+        "type": types[sante],
+        "n": pd.to_numeric(df[value_col], errors="coerce").fillna(1) if value_col else 1.0,
+    }).reset_index(drop=True)
+
+
+@functools.lru_cache(maxsize=1)
+def _bpe_nationale() -> pd.DataFrame:
+    """Fichier BPE national, téléchargé UNE fois par exécution (repli sur le millésime précédent).
+
+    Seules les colonnes utiles et les équipements de santé sont gardés en mémoire.
+    """
+    utiles = {c.upper() for c in (*_COL_GEO, *_COL_TYPE, *_COL_VAL)}
     erreurs = []
     for ident, url in bpe_file_urls():
         try:
-            df = lire_tableau(_get(url).content)
-            print(f"   BPE : fichier {ident} ({len(df):,} lignes)")
+            df = _normaliser_bpe(lire_tableau(_get(url).content, utiles))
+            print(f"   BPE : fichier {ident} ({len(df):,} lignes santé)")
             return df
         except Exception as exc:  # noqa: BLE001
             print(f"   BPE : fichier {ident} illisible ({exc}) — essai du suivant")
@@ -183,26 +212,13 @@ def _telecharger_bpe() -> pd.DataFrame:
 
 
 def _lire_bpe(departement: str) -> pd.DataFrame:
-    """Lignes BPE du département : code commune, type d'équipement, nombre.
+    """Lignes BPE santé du département : code commune, type d'équipement, nombre.
 
-    Le fichier est téléchargé en entier : c'est plus sûr que d'interroger une
-    API dont les noms de dimensions varient selon les millésimes.
-    Les noms de colonnes sont détectés parmi les variantes connues.
+    Le fichier national est téléchargé en entier : c'est plus sûr que d'interroger
+    une API dont les noms de dimensions varient selon les millésimes.
     """
-    df = _telecharger_bpe()
-    cols = list(df.columns)
-    geo_col = _pick(cols, "GEO", "DEPCOM", "CODGEO", "COM")
-    type_col = _pick(cols, "FACILITY_TYPE", "TYPEQU", "BPE_TYPEQU")
-    value_col = _pick(cols, "OBS_VALUE", "NB_EQUIP", "NB")
-    if not geo_col or not type_col:
-        raise ValueError(f"Colonnes BPE non reconnues : {cols[:15]}")
-
-    out = pd.DataFrame({
-        "code": df[geo_col].map(lambda v: parse_geo(v)[0]),
-        "type": df[type_col].str.upper(),
-        "n": pd.to_numeric(df[value_col], errors="coerce").fillna(1) if value_col else 1.0,
-    })
-    return out[out["code"].fillna("").str.startswith(departement)]
+    bpe = _bpe_nationale()
+    return bpe[bpe["code"].fillna("").str.startswith(departement)]
 
 
 def _codes_sante(bpe: pd.DataFrame) -> dict:

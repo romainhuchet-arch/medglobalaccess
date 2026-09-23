@@ -108,7 +108,8 @@ lancement réel.** Une profession introuvable est signalée (`professions_absent
 avec la liste des codes santé présents) et masquée dans l'appli ; seuls les
 généralistes sont indispensables.
 
-**Carte.** Rendu WebGL (pydeck / deck.gl), fond CARTO. Les contours sont allégés
+**Carte.** Rendu WebGL (pydeck / deck.gl, MapLibre), fond **Plan IGN** (Géoplateforme,
+gratuit et sans clé ; les fonds CARTO exigent désormais une clé d'API hors de localhost). Les contours sont allégés
 (simplification à ~20 m, coordonnées arrondies) : la carte d'un département pèse
 quelques centaines de Ko et s'affiche instantanément. Palette orange → bleu cassée
 au seuil, lisible par les daltoniens. Cliquer une commune ouvre sa fiche ; le
@@ -155,7 +156,11 @@ Deux versions, pour deux publics :
 2. *Settings → Pages → Source* : **GitHub Actions**.
 3. Le workflow `pages.yml` télécharge les **vraies** données Insee, puis publie
    `https://<compte>.github.io/<dépôt>/`. Il les rafraîchit chaque mois.
-   Autre département : *Settings → Variables → Actions*, `DEPARTEMENT=29`.
+   **Tous les départements** sont publiés (un fichier par département, chargé à la
+   demande) : on change de département depuis l'en-tête de l'appli, ou par lien
+   direct `…/#29`. Pour n'en publier que quelques-uns : *Settings → Secrets and
+   variables → Actions → Variables*, `DEPARTEMENTS=44 85 49`. `DEPARTEMENT=44`
+   fixe celui affiché à l'ouverture.
 
 Installer sur téléphone :
 - **Android (Chrome)** : bouton « Installer l'appli » dans l'en-tête, ou menu ⋮ → *Installer*.

@@ -38,6 +38,16 @@ button { font: inherit; cursor: pointer; }
 .marque { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .marque img { border-radius: 7px; }
 .marque h1 { font-size: 1.05rem; margin: 0; letter-spacing: -.01em; }
+.titres { min-width: 0; }
+.choix-dep {
+  display: flex; align-items: center; gap: 4px; max-width: 100%; margin: 1px 0 0; padding: 2px 9px 2px 8px;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); border-radius: 999px;
+  color: #fff; font-size: .8rem; font-weight: 600; white-space: nowrap;
+}
+.choix-dep #nom-dep { overflow: hidden; text-overflow: ellipsis; }
+.choix-dep .chevron { font-size: .7rem; opacity: .8; }
+.choix-dep:not([hidden]) + p { display: none; }
+@media (min-width: 900px) { .choix-dep:not([hidden]) + p { display: block; } .titres { display: flex; align-items: center; gap: 10px; } }
 .marque p { margin: 0; font-size: .78rem; color: #b6c3d4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bouton-installer {
   background: #fff; color: var(--marine); border: 0; border-radius: 999px; padding: 7px 14px;
@@ -219,6 +229,33 @@ input[type="search"] {
   box-shadow: var(--ombre);
 }
 .astuce button { position: absolute; right: 8px; top: 8px; background: none; border: 0; color: #fff; font-size: 1.2rem; }
+
+/* Choix du département */
+.dialogue {
+  position: fixed; inset: 0; z-index: 20; background: rgba(15,23,42,.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: calc(12px + env(safe-area-inset-top)) 12px 12px;
+}
+.dialogue-boite {
+  background: var(--surface); border-radius: 16px; width: 100%; max-width: 440px;
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top)); display: flex; flex-direction: column;
+  box-shadow: var(--ombre); padding: 14px 14px 6px;
+}
+.dialogue-tete { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.dialogue-tete h2 { margin: 0; font-size: 1rem; color: var(--encre); }
+.dialogue .fermer { border: 0; background: var(--fond); width: 30px; height: 30px; border-radius: 50%; color: var(--gris); font-size: 1.1rem; }
+.dialogue input[type="search"] { font-size: 16px; }  /* 16 px : pas de zoom automatique sur iPhone */
+.liste-dep { list-style: none; margin: 0; padding: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.liste-dep button {
+  width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: none;
+  padding: 10px 6px; border-bottom: 1px solid #f1f5f9; color: var(--texte); font-size: .92rem; border-radius: 6px;
+}
+.liste-dep button:hover { background: #f8fafc; }
+.liste-dep button[aria-current="true"] { background: var(--bleu-pale); }
+.liste-dep .code-dep { min-width: 34px; font-weight: 700; color: var(--encre); font-variant-numeric: tabular-nums; }
+.liste-dep .nom { flex: 1; }
+.liste-dep .sous { font-size: .76rem; color: var(--gris); }
+.liste-dep .vide { padding: 14px 6px; color: var(--gris); font-size: .88rem; }
 
 /* Mobile : légende compacte */
 @media (max-width: 899px) {

@@ -314,3 +314,20 @@ def test_api_professions():
     assert len(man["professions"]) == 5 and max(c["manques"] for c in man["communes"]) <= 5
     reco = client.get("/departement/44/installation?profession=pharmacies&medecins=2").json()
     assert reco["profession"] == "pharmacies" and len(reco["resultats"]) == 2
+
+
+def test_lire_tableau_accepte_zip_gzip_et_csv_brut():
+    import gzip
+
+    import pytest
+
+    csv = "GEO;FACILITY_TYPE;OBS_VALUE\n2025-COM-44109;D265;3\n".encode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("meta.csv", "a;b\n1;2\n")
+        zf.writestr("data.csv", csv + b"2025-COM-44001;D307;1\n" * 5)
+    for raw in (csv, gzip.compress(csv), buf.getvalue()):
+        df = melodi.lire_tableau(raw)
+        assert list(df.columns) == ["GEO", "FACILITY_TYPE", "OBS_VALUE"]
+    with pytest.raises(ValueError, match="Réponse inattendue"):
+        melodi.lire_tableau(b"<html>maintenance</html>")

@@ -88,3 +88,26 @@ def test_js_matches_python(ratio, rayon_gp, monkeypatch):
         assert out[cle]["classement"] == list(rank_sites(df, 1.0, top=10, cle=cle)["code"])
         assert out[cle]["plan"] == list(greedy_plan(df, 3, cle=cle)["code"])
     assert out["manques"] == list(tout["manques"])
+
+
+def test_export_multi_departements(tmp_path, monkeypatch):
+    """Un fichier par département + un index ; l'appli web lit l'index."""
+    import sys
+
+    from medaccess import export
+
+    monkeypatch.setattr(settings, "force_synthetic", True)
+    monkeypatch.setattr(sys, "argv", ["export", "--dep", "all", "--out", str(tmp_path)])
+    export.main()
+    index = json.loads((tmp_path / "departements.json").read_text(encoding="utf-8"))
+    assert index["defaut"] == "44"
+    assert index["departements"] == [
+        {"code": "44", "nom": "Loire-Atlantique", "communes": 207, "demo": True}]
+    assert (tmp_path / "dep" / "44.json").exists()
+
+
+def test_selection_departements():
+    from medaccess.departements import DEPARTEMENTS, selection
+
+    assert len(DEPARTEMENTS) == 101 and len(selection("all")) == 101
+    assert selection("44, 1 2a") == ["44", "01", "2A"]

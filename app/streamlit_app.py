@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from medaccess.access import compute, compute_all, disponibles, summary  # noqa: E402
 from medaccess.config import settings  # noqa: E402
 from medaccess.data import load  # noqa: E402
+from medaccess.departements import DEPARTEMENTS  # noqa: E402
 from medaccess.geo import contour_departement  # noqa: E402
 from medaccess.professions import get as get_profession  # noqa: E402
 from medaccess.simulate import greedy_plan, rank_sites  # noqa: E402
@@ -102,7 +103,11 @@ def get_data(dep: str, synthetic: bool):
 
 with st.sidebar:
     st.header("Paramètres")
-    dep = st.text_input("Département", value=settings.departement, max_chars=3)
+    codes = list(DEPARTEMENTS)
+    dep = st.selectbox("Département", codes, index=codes.index(settings.departement)
+                       if settings.departement in codes else 0,
+                       format_func=lambda c: f"{c} · {DEPARTEMENTS[c]}",
+                       help="Tapez le nom ou le numéro pour filtrer.")
     settings.force_synthetic = st.toggle("Mode démo (hors ligne)", value=settings.force_synthetic)
 
 df, geojson, report, contour = get_data(dep, settings.force_synthetic)

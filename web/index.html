@@ -20,8 +20,11 @@
   <header class="barre">
     <div class="marque">
       <img src="icons/icon-192.png" alt="" width="28" height="28">
-      <div>
+      <div class="titres">
         <h1>MedAccess</h1>
+        <button id="choix-dep" class="choix-dep" aria-haspopup="dialog" hidden>
+          <span id="nom-dep">Département</span> <span class="chevron" aria-hidden="true">▾</span>
+        </button>
         <p id="territoire">Accès aux soins de premier recours</p>
       </div>
     </div>
@@ -145,6 +148,17 @@
       </div>
     </aside>
   </main>
+
+  <div id="dialogue-dep" class="dialogue" role="dialog" aria-modal="true" aria-labelledby="titre-dep" hidden>
+    <div class="dialogue-boite">
+      <div class="dialogue-tete">
+        <h2 id="titre-dep">Changer de département</h2>
+        <button id="fermer-dep" class="fermer" aria-label="Fermer">×</button>
+      </div>
+      <input type="search" id="filtre-dep" placeholder="Nom ou numéro (ex. Finistère, 29)…" autocomplete="off">
+      <ul class="liste-dep" id="liste-dep"></ul>
+    </div>
+  </div>
 
   <div id="astuce-ios" class="astuce" hidden>
     Pour installer : touchez <b>Partager</b> puis <b>Sur l'écran d'accueil</b>.

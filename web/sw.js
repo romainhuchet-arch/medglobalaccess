@@ -3,7 +3,7 @@
  * - données : réseau d'abord, cache en secours (on voit toujours la dernière version) ;
  * - fond de carte : cache au fil de la navigation, limité en taille.
  */
-const VERSION = "medaccess-v2.2";
+const VERSION = "medaccess-v3.0";
 const COQUILLE = [
   "./", "index.html", "style.css", "app.js", "calc.js", "manifest.webmanifest",
   "vendor/maplibre-gl.js", "vendor/maplibre-gl.css",
@@ -55,6 +55,8 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   if (url.hostname === "data.geopf.fr") { e.respondWith(tuile(e.request)); return; }
   if (url.origin !== location.origin) return;
-  if (url.pathname.endsWith("/data/communes.json")) { e.respondWith(reseauDabord(e.request)); return; }
+  // Données (index + un fichier par département) : réseau d'abord ; les départements
+  // déjà consultés restent disponibles hors ligne.
+  if (url.pathname.includes("/data/")) { e.respondWith(reseauDabord(e.request)); return; }
   e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((r) => r || fetch(e.request)));
 });
