@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MedAccess</title>
+  <meta name="description" content="Accès aux soins de premier recours commune par commune : généralistes, pharmacies, dentistes, infirmiers, kinés.">
+  <meta name="theme-color" content="#0f2742">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MedAccess">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="barre">
+    <div class="marque">
+      <img src="icons/icon-192.png" alt="" width="28" height="28">
+      <div>
+        <h1>MedAccess</h1>
+        <p id="territoire">Accès aux soins de premier recours</p>
+      </div>
+    </div>
+    <button id="installer" class="bouton-installer" hidden>Installer l'appli</button>
+  </header>
+
+  <nav class="professions" id="professions" aria-label="Profession affichée"></nav>
+
+  <main class="page">
+    <section class="carte-zone">
+      <div id="carte" role="region" aria-label="Carte des communes"></div>
+      <div class="legende" id="legende"></div>
+      <div id="chargement" class="chargement">Chargement de la carte…</div>
+    </section>
+
+    <aside class="panneau" id="panneau">
+      <button class="poignee" id="poignee" aria-label="Agrandir ou réduire le panneau"><span></span></button>
+
+      <div id="bandeau-demo" class="bandeau" hidden>
+        <strong>Mode démo</strong> : communes et populations réelles, effectifs de soignants simulés.
+      </div>
+
+      <nav class="onglets" role="tablist">
+        <button role="tab" data-onglet="synthese" aria-selected="true">Synthèse</button>
+        <button role="tab" data-onglet="installer">Où installer ?</button>
+        <button role="tab" data-onglet="communes">Communes</button>
+        <button role="tab" data-onglet="methode">Méthode</button>
+      </nav>
+
+      <div class="contenu">
+        <!-- Synthèse -->
+        <section data-vue="synthese">
+          <div id="fiche" hidden></div>
+          <div class="kpis" id="kpis"></div>
+
+          <div class="bloc" id="bloc-couleur">
+            <div class="bloc-titre">Colorer la carte selon</div>
+            <div class="segmente" id="vue-couleur">
+              <button data-valeur="acces" aria-pressed="true">Accès réel</button>
+              <button data-valeur="densite" aria-pressed="false">Densité naïve</button>
+            </div>
+            <p class="aide">La densité naïve ignore les professionnels des communes voisines. Comparez les deux cartes.</p>
+          </div>
+
+          <div class="bloc" id="bloc-cumul" hidden>
+            <div class="bloc-titre">Professions comptées dans le cumul</div>
+            <div class="cases" id="cases-cumul"></div>
+            <p class="aide">Une commune compte un manque par profession cochée pour laquelle elle est sous-dotée.
+              Les professions ne s'additionnent pas : un dentiste ne remplace pas un généraliste.</p>
+          </div>
+
+          <details class="bloc reglages">
+            <summary>Réglages</summary>
+            <label>Sous-dotée en dessous de <output id="val-seuil"></output>
+              <input type="range" id="seuil" min="50" max="90" step="5">
+              <span class="aide">de l'accès moyen du département, pour chaque profession.</span>
+            </label>
+            <label id="label-rayon">Distance de recours <output id="val-rayon"></output>
+              <input type="range" id="rayon" min="5" max="50" step="5">
+              <span class="aide" id="aide-rayon"></span>
+            </label>
+          </details>
+
+          <div class="bloc">
+            <div class="bloc-titre" id="titre-pires">Communes les moins bien desservies</div>
+            <ol class="liste" id="pires"></ol>
+          </div>
+        </section>
+
+        <!-- Simulateur -->
+        <section data-vue="installer" hidden>
+          <p class="intro">On simule une installation dans chaque commune et on recalcule tout
+            l'indicateur. Le meilleur site n'est pas forcément la commune la plus mal classée.</p>
+          <div class="bloc-titre">Profession à installer</div>
+          <div class="segmente defile" id="sim-profession"></div>
+          <label class="bloc"><span id="label-nb">Nombre à installer</span> : <output id="val-nb">1</output>
+            <input type="range" id="nb-medecins" min="1" max="5" step="1" value="1">
+          </label>
+          <div class="kpis deux" id="kpis-sim"></div>
+          <ol class="liste sites" id="sites"></ol>
+          <p class="aide">Habitants sortis : habitants dont l'accès repasse au-dessus du seuil.</p>
+        </section>
+
+        <!-- Liste -->
+        <section data-vue="communes" hidden>
+          <input type="search" id="recherche" placeholder="Rechercher une commune…" autocomplete="off">
+          <ol class="liste" id="toutes"></ol>
+        </section>
+
+        <!-- Méthode -->
+        <section data-vue="methode" hidden class="texte">
+          <h3>Pourquoi pas la densité par commune ?</h3>
+          <p>« Professionnels pour 10 000 habitants » commune par commune est trompeur : un village
+            sans médecin à 5 km d'une ville bien dotée n'est pas un désert.</p>
+          <h3>La méthode 2SFCA</h3>
+          <p>Même famille de méthodes que l'APL de la DREES. 1) Pour chaque commune où exercent des
+            professionnels : effectif ÷ population du bassin qui y a recours, pondérée par la distance.
+            2) Pour chaque commune : somme de l'offre accessible, pondérée par la distance.</p>
+          <h3>Distances de recours</h3>
+          <p>Un professionnel compte pleinement sur place, à 50 % au tiers de la distance de recours,
+            plus du tout au-delà. Chaque profession a la sienne :</p>
+          <ul id="liste-rayons"></ul>
+          <h3>Seuil de sous-dotation</h3>
+          <p>Une commune est <b>sous-dotée</b> quand son accès est inférieur à une fraction de la moyenne
+            du département (2/3 par défaut), <b>fragile</b> juste au-dessus. La règle est la même pour
+            toutes les professions. Elle compare les communes <i>entre elles</i> : un département
+            globalement sous-doté n'apparaît pas comme tel.</p>
+          <h3>Cumul des manques</h3>
+          <p>Nombre de professions pour lesquelles la commune est sous-dotée. On ne fait pas de score
+            global : les professions ne sont pas substituables et toute pondération serait arbitraire.</p>
+          <h3>Limites</h3>
+          <ul>
+            <li>Distances à vol d'oiseau, pas en temps de trajet.</li>
+            <li>Professionnels comptés par tête, pas en équivalent temps plein ; pharmacies comptées en officines.</li>
+            <li>Population non pondérée par l'âge.</li>
+            <li>Seuils : conventions de travail ; le zonage officiel des médecins repose sur l'APL (DREES).</li>
+          </ul>
+          <h3>Sources</h3>
+          <p id="sources"></p>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <div id="astuce-ios" class="astuce" hidden>
+    Pour installer : touchez <b>Partager</b> puis <b>Sur l'écran d'accueil</b>.
+    <button aria-label="Fermer">×</button>
+  </div>
+
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="calc.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

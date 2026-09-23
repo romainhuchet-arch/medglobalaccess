@@ -1,0 +1,55 @@
+# Publie l'appli web (web/) sur GitHub Pages, avec les VRAIES données Insee.
+# Activer une fois : Settings → Pages → Source : « GitHub Actions ».
+name: Appli web (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 5 2 * *"   # le 2 de chaque mois : données rafraîchies
+  workflow_dispatch:
+    inputs:
+      demo:
+        description: "Publier la démo (médecins simulés) au lieu des données réelles"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      DEPARTEMENT: ${{ vars.DEPARTEMENT || '44' }}
+      # Pas de repli silencieux : si l'Insee ne répond pas, on garde la version en ligne
+      ALLOW_SYNTHETIC_FALLBACK: "false"
+      FORCE_SYNTHETIC: ${{ inputs.demo && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Export des données
+        run: python -m medaccess.export --dep "$DEPARTEMENT"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - id: deploiement
+        uses: actions/deploy-pages@v4

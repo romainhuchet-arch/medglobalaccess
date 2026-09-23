@@ -1,0 +1,241 @@
+:root {
+  --encre: #111827;
+  --texte: #1f2937;
+  --gris: #6b7280;
+  --gris-clair: #9ca3af;
+  --trait: #e5e7eb;
+  --fond: #f3f4f6;
+  --carte-fond: #eef1f4;
+  --surface: #ffffff;
+  --marine: #0f2742;
+  --accent: #2563eb;
+  --orange: #c2410c;
+  --orange-pale: #fde2cf;
+  --bleu-pale: #dbeafe;
+  --ambre-pale: #fef3c7;
+  --rayon: 14px;
+  --ombre: 0 10px 30px rgba(15, 23, 42, .12);
+  --police: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--police); color: var(--texte); background: var(--fond);
+  display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; cursor: pointer; }
+
+/* --- Barre du haut --- */
+.barre {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--marine); color: #fff;
+  flex-shrink: 0; z-index: 3;
+}
+.marque { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.marque img { border-radius: 7px; }
+.marque h1 { font-size: 1.05rem; margin: 0; letter-spacing: -.01em; }
+.marque p { margin: 0; font-size: .78rem; color: #b6c3d4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bouton-installer {
+  background: #fff; color: var(--marine); border: 0; border-radius: 999px; padding: 7px 14px;
+  font-weight: 600; font-size: .85rem; white-space: nowrap;
+}
+
+/* --- Choix de la profession --- */
+.professions {
+  display: flex; gap: 6px; padding: 8px 12px; background: var(--marine); overflow-x: auto;
+  scrollbar-width: none; flex-shrink: 0; z-index: 3; border-top: 1px solid rgba(255,255,255,.08);
+}
+.professions::-webkit-scrollbar { display: none; }
+.professions button {
+  flex-shrink: 0; border: 1px solid rgba(255,255,255,.22); background: transparent; color: #d7e0ea;
+  padding: 6px 13px; border-radius: 999px; font-size: .84rem; font-weight: 600; white-space: nowrap;
+}
+.professions button[aria-pressed="true"] { background: #fff; color: var(--marine); border-color: #fff; }
+.professions .puce-cumul { border-color: rgba(253,141,60,.65); color: #fdc79b; }
+.professions .puce-cumul[aria-pressed="true"] { background: #fd8d3c; color: #3b1603; border-color: #fd8d3c; }
+
+/* --- Page --- */
+.page { position: relative; flex: 1; min-height: 0; }
+.carte-zone { position: absolute; inset: 0; background: var(--carte-fond); }
+#carte { position: absolute; inset: 0; }
+.chargement {
+  position: absolute; inset: 0; display: grid; place-items: center; color: var(--gris);
+  font-size: .95rem; background: var(--carte-fond); z-index: 1; transition: opacity .3s;
+}
+.chargement.fini { opacity: 0; pointer-events: none; }
+
+/* Légende */
+.legende {
+  position: absolute; left: 12px; top: 12px; z-index: 2; background: rgba(255,255,255,.94);
+  border-radius: 12px; padding: 10px 12px; box-shadow: var(--ombre); width: 210px; font-size: .74rem;
+  color: var(--gris); backdrop-filter: blur(6px);
+}
+.legende b { color: var(--encre); font-size: .78rem; }
+.legende .degrade { height: 10px; border-radius: 5px; margin: 7px 0 4px; }
+.legende .graduations { display: flex; justify-content: space-between; }
+.cases-leg { display: flex; gap: 8px; margin-top: 7px; flex-wrap: wrap; }
+.case-leg { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--texte); }
+.case-leg i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; border: 1px solid rgba(0,0,0,.06); }
+
+/* Étiquettes de villes et marqueurs */
+.ville {
+  font-size: 12px; font-weight: 650; color: var(--encre); pointer-events: none; white-space: nowrap;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 5px #fff, 0 0 8px #fff;
+}
+.site {
+  width: 26px; height: 26px; border-radius: 50%; background: var(--encre); color: #fff;
+  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+  border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35);
+}
+.site.premier { background: var(--accent); width: 30px; height: 30px; }
+
+/* Infobulle MapLibre */
+.maplibregl-popup-content {
+  background: var(--encre); color: #fff; border-radius: 10px; padding: 9px 12px;
+  font-family: var(--police); font-size: .82rem; box-shadow: var(--ombre);
+}
+.maplibregl-popup-tip { border-top-color: var(--encre) !important; border-bottom-color: var(--encre) !important; }
+.maplibregl-popup-content b { font-size: .9rem; }
+.maplibregl-popup-content .dim { color: var(--gris-clair); }
+
+/* --- Panneau (bas d'écran sur mobile) --- */
+.panneau {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; background: var(--surface);
+  border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(15,23,42,.18);
+  height: 46dvh; display: flex; flex-direction: column; transition: height .25s ease;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.panneau.reduit { height: 128px; }
+.panneau.plein { height: calc(100dvh - 90px); }
+.poignee { border: 0; background: none; padding: 8px 0 4px; display: grid; place-items: center; }
+.poignee span { width: 40px; height: 5px; border-radius: 3px; background: #d1d5db; display: block; }
+
+.bandeau {
+  margin: 0 14px 8px; padding: 8px 12px; background: var(--bleu-pale); color: #1e3a8a;
+  border-radius: 10px; font-size: .8rem;
+}
+.onglets {
+  display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--trait); overflow-x: auto;
+  scrollbar-width: none; flex-shrink: 0;
+}
+.onglets::-webkit-scrollbar { display: none; }
+.onglets button {
+  border: 0; background: none; padding: 10px 10px 11px; color: var(--gris); font-weight: 600;
+  font-size: .88rem; border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.onglets button[aria-selected="true"] { color: var(--encre); border-bottom-color: var(--accent); }
+.contenu { overflow-y: auto; padding: 14px 14px 24px; flex: 1; -webkit-overflow-scrolling: touch; }
+
+/* KPIs */
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kpi { border: 1px solid var(--trait); border-radius: 12px; padding: 10px 12px; }
+.kpi .v { font-size: 1.35rem; font-weight: 750; color: var(--encre); letter-spacing: -.02em; }
+.kpi .l { font-size: .76rem; color: var(--gris); line-height: 1.3; }
+.kpi.fort { background: #eff6ff; border-color: #bfdbfe; }
+.kpi.fort .v { color: #1d4ed8; }
+
+.bloc { display: block; margin-top: 16px; }
+.bloc-titre { font-weight: 650; font-size: .88rem; color: var(--encre); margin-bottom: 8px; }
+.aide { font-size: .76rem; color: var(--gris); margin: 6px 0 0; }
+.intro { font-size: .86rem; color: var(--texte); margin: 0 0 4px; line-height: 1.45; }
+
+.segmente { display: inline-flex; background: var(--fond); border-radius: 10px; padding: 3px; }
+.segmente button {
+  border: 0; background: none; padding: 6px 12px; border-radius: 8px; font-size: .84rem; color: var(--gris); font-weight: 600;
+}
+.segmente button[aria-pressed="true"] { background: #fff; color: var(--encre); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+.segmente.defile { display: flex; overflow-x: auto; max-width: 100%; scrollbar-width: none; margin-bottom: 4px; }
+.segmente.defile button { flex-shrink: 0; }
+.cases { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.case { font-size: .86rem; display: inline-flex; align-items: center; gap: 6px; }
+.case input { width: 17px; height: 17px; accent-color: var(--accent); }
+
+/* Profil de la commune (fiche) */
+.profils { display: grid; gap: 2px; margin-top: 10px; }
+.profil {
+  display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; text-align: left; border: 0;
+  background: none; padding: 7px 6px; border-radius: 8px; color: var(--texte);
+}
+.profil:hover, .profil.actif { background: #f5f7fa; }
+.profil-nom { font-size: .86rem; font-weight: 600; color: var(--encre); display: flex; gap: 6px; align-items: center; }
+.profil-val { font-size: .86rem; text-align: right; }
+.profil-barre { grid-column: 1 / -1; position: relative; height: 7px; background: #eef1f4; border-radius: 4px; }
+.profil-barre i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.profil-barre em { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--encre); opacity: .55; }
+.profil-sous { grid-column: 1 / -1; font-size: .72rem; color: var(--gris); }
+.dim { color: var(--gris); font-size: .84rem; }
+.profil .etiquette { font-size: .66rem; padding: 1px 7px; }
+
+.reglages summary { font-weight: 650; font-size: .88rem; color: var(--encre); cursor: pointer; }
+.reglages label, label.bloc { display: block; font-size: .84rem; color: var(--texte); margin-top: 10px; }
+output { font-weight: 700; color: var(--encre); float: right; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: 6px; }
+input[type="search"] {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--trait); border-radius: 10px; font: inherit;
+  font-size: .92rem; margin-bottom: 8px; background: var(--fond);
+}
+
+/* Listes */
+.liste { list-style: none; margin: 0; padding: 0; }
+.liste li {
+  display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid #f1f5f9;
+  font-size: .88rem; cursor: pointer; border-radius: 6px;
+}
+.liste li:hover { background: #f8fafc; }
+.liste .pastille-couleur { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.liste .nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.liste .val { font-weight: 700; color: var(--encre); font-variant-numeric: tabular-nums; }
+.liste .sous { display: block; font-size: .74rem; color: var(--gris); font-weight: 400; }
+.sites li .rang {
+  width: 24px; height: 24px; border-radius: 50%; background: var(--encre); color: #fff; font-weight: 700;
+  font-size: .78rem; display: grid; place-items: center; flex-shrink: 0;
+}
+.sites li:first-child .rang { background: var(--accent); }
+
+/* Fiche commune */
+.fiche { border: 1px solid var(--trait); border-radius: var(--rayon); padding: 12px 14px; margin-bottom: 12px; position: relative; }
+.fiche h2 { margin: 0 0 6px; font-size: 1.05rem; color: var(--encre); padding-right: 28px; }
+.fiche .fermer { position: absolute; top: 8px; right: 8px; border: 0; background: var(--fond); width: 28px; height: 28px; border-radius: 50%; color: var(--gris); }
+.fiche .ligne { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: .86rem; }
+.fiche .ligne span:first-child { color: var(--gris); }
+.etiquette { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700; }
+.etiquette.sous-dotée { background: var(--orange-pale); color: #9a3412; }
+.etiquette.fragile { background: var(--ambre-pale); color: #92400e; }
+.etiquette.correcte { background: var(--bleu-pale); color: #1e40af; }
+
+.texte { font-size: .88rem; line-height: 1.5; }
+.texte h3 { font-size: .95rem; color: var(--encre); margin: 14px 0 4px; }
+.texte h3:first-child { margin-top: 0; }
+.texte ul { padding-left: 18px; }
+
+.astuce {
+  position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 10;
+  background: var(--encre); color: #fff; border-radius: 12px; padding: 12px 40px 12px 14px; font-size: .86rem;
+  box-shadow: var(--ombre);
+}
+.astuce button { position: absolute; right: 8px; top: 8px; background: none; border: 0; color: #fff; font-size: 1.2rem; }
+
+/* Mobile : légende compacte */
+@media (max-width: 899px) {
+  .legende { width: 172px; padding: 7px 10px; font-size: .68rem; top: 10px; left: 10px; }
+  .legende b { font-size: .72rem; }
+  .legende .degrade { height: 8px; margin: 5px 0 3px; }
+  .bandeau { font-size: .74rem; padding: 6px 10px; }
+}
+
+/* --- Grand écran : panneau latéral --- */
+@media (min-width: 900px) {
+  .page { display: grid; grid-template-columns: 1fr 400px; grid-template-rows: minmax(0, 1fr); }
+  .carte-zone { position: relative; inset: auto; }
+  .panneau {
+    position: relative; height: auto !important; border-radius: 0; box-shadow: none;
+    border-left: 1px solid var(--trait); padding-top: 12px; min-height: 0;
+  }
+  .poignee { display: none; }
+  .legende { top: auto; bottom: 28px; left: 16px; }
+}
