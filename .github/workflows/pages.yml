@@ -26,9 +26,14 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       PYTHONPATH: src
-      DEPARTEMENT: ${{ vars.DEPARTEMENT || '44' }}
+      # Départements publiés : « all » = toute la France (≈ 10 min de build).
+      # Pour réduire : Settings → Secrets and variables → Actions → Variables →
+      # DEPARTEMENTS = "44 85 49 35 56" par exemple.
+      DEPARTEMENTS: ${{ vars.DEPARTEMENTS || 'all' }}
+      DEPARTEMENT: ${{ vars.DEPARTEMENT || '44' }}   # affiché à l'ouverture
       # Pas de repli silencieux : si l'Insee ne répond pas, on garde la version en ligne
       ALLOW_SYNTHETIC_FALLBACK: "false"
       FORCE_SYNTHETIC: ${{ inputs.demo && 'true' || 'false' }}
@@ -39,7 +44,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
       - name: Export des données
-        run: python -m medaccess.export --dep "$DEPARTEMENT"
+        run: python -m medaccess.export --dep "$DEPARTEMENTS"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

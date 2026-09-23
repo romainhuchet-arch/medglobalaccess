@@ -192,6 +192,44 @@ def _normaliser_bpe(df: pd.DataFrame) -> pd.DataFrame:
     }).reset_index(drop=True)
 
 
+def telecharger(url: str, essais: int = 3) -> bytes:
+    """Téléchargement en flux, taille vérifiée : un fichier tronqué est retéléchargé.
+
+    (requests ne signale pas toujours une connexion coupée en cours de route ;
+    un zip incomplet donne alors « File is not a zip file ».)
+    """
+    import requests
+
+    derniere = None
+    for essai in range(1, essais + 1):
+        try:
+            _limiter.wait()
+            with requests.get(url, stream=True, timeout=settings.request_timeout) as r:
+                r.raise_for_status()
+                attendu = int(r.headers.get("Content-Length") or 0)
+                buf = io.BytesIO()
+                for bloc in r.iter_content(1 << 20):
+                    buf.write(bloc)
+                raw = buf.getvalue()
+            mo = len(raw) / 1e6
+            print(f"   BPE : {mo:.1f} Mo reçus"
+                  + (f" / {attendu / 1e6:.1f} Mo annoncés" if attendu else "")
+                  + f" ({r.headers.get('Content-Type', '?')})")
+            if attendu and len(raw) < attendu:
+                raise OSError(f"téléchargement incomplet ({mo:.1f} Mo sur {attendu / 1e6:.1f})")
+            if raw[:2] == b"PK" and not zipfile.is_zipfile(io.BytesIO(raw)):
+                raise OSError(f"zip incomplet ou corrompu ({mo:.1f} Mo, fin : {raw[-24:]!r})")
+            return raw
+        except Exception as exc:  # noqa: BLE001
+            derniere = exc
+            print(f"   BPE : essai {essai}/{essais} raté — {exc}")
+            time.sleep(5 * essai)
+    raise RuntimeError(str(derniere))
+
+
+_ECHEC_NATIONAL: list[str] = []
+
+
 @functools.lru_cache(maxsize=1)
 def _bpe_nationale() -> pd.DataFrame:
     """Fichier BPE national, téléchargé UNE fois par exécution (repli sur le millésime précédent).
@@ -202,7 +240,7 @@ def _bpe_nationale() -> pd.DataFrame:
     erreurs = []
     for ident, url in bpe_file_urls():
         try:
-            df = _normaliser_bpe(lire_tableau(_get(url).content, utiles))
+            df = _normaliser_bpe(lire_tableau(telecharger(url), utiles))
             print(f"   BPE : fichier {ident} ({len(df):,} lignes santé)")
             return df
         except Exception as exc:  # noqa: BLE001
@@ -211,14 +249,54 @@ def _bpe_nationale() -> pd.DataFrame:
     raise RuntimeError("Aucun fichier BPE lisible. " + " | ".join(erreurs))
 
 
+def _bpe_api(departement: str) -> pd.DataFrame:
+    """Repli : BPE du département par l'API de données Melodi (sans fichier national).
+
+    Les noms de dimensions sont détectés (…TYPE…, …MEASURE). Si le jeu porte
+    plusieurs mesures, on garde celle des nombres d'équipements pour ne pas
+    additionner des mesures différentes.
+    """
+    obs = get_observations("DS_BPE", GEO=f"DEP-{departement}*COM")
+    if not obs:
+        raise ValueError(f"API Melodi : aucune observation BPE pour {departement}")
+    dims = obs[0]["dimensions"]
+    type_col = next((k for k in dims if "TYPE" in k.upper()), None)
+    mesure_col = next((k for k in dims if k.upper().endswith("MEASURE")), None)
+    if not type_col:
+        raise ValueError(f"API Melodi : dimensions BPE non reconnues {list(dims)}")
+    rows = []
+    for o in obs:
+        d = o["dimensions"]
+        valeur = next(iter(o.get("measures", {}).values()), {}).get("value")
+        rows.append({"code": parse_geo(d.get("GEO", ""))[0], "type": str(d.get(type_col, "")).upper(),
+                     "mesure": d.get(mesure_col) if mesure_col else None,
+                     "n": float(valeur) if valeur is not None else 1.0})
+    df = pd.DataFrame(rows)
+    if mesure_col and df["mesure"].nunique() > 1:
+        mesures = sorted(df["mesure"].dropna().unique())
+        choix = next((m for m in mesures if any(t in str(m).upper() for t in ("NB", "FACILIT", "EQUIP"))),
+                     df["mesure"].mode().iloc[0])
+        print(f"   BPE (API) : mesures {mesures} → « {choix} » retenue")
+        df = df[df["mesure"] == choix]
+    df = df[df["type"].str.startswith("D") & df["code"].notna()]
+    print(f"   BPE (API) : {len(df):,} lignes santé pour {departement}")
+    return df[["code", "type", "n"]].reset_index(drop=True)
+
+
 def _lire_bpe(departement: str) -> pd.DataFrame:
     """Lignes BPE santé du département : code commune, type d'équipement, nombre.
 
-    Le fichier national est téléchargé en entier : c'est plus sûr que d'interroger
-    une API dont les noms de dimensions varient selon les millésimes.
+    D'abord le fichier national (une fois pour tous les départements) ; s'il est
+    illisible, l'API de données Melodi, département par département.
     """
-    bpe = _bpe_nationale()
-    return bpe[bpe["code"].fillna("").str.startswith(departement)]
+    if not _ECHEC_NATIONAL:
+        try:
+            bpe = _bpe_nationale()
+            return bpe[bpe["code"].fillna("").str.startswith(departement)]
+        except Exception as exc:  # noqa: BLE001
+            _ECHEC_NATIONAL.append(str(exc))
+            print(f"   BPE : fichier national indisponible → repli sur l'API Melodi ({exc})")
+    return _bpe_api(departement)
 
 
 def _codes_sante(bpe: pd.DataFrame) -> dict:
