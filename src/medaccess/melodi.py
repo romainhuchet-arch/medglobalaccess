@@ -175,21 +175,47 @@ _COL_TYPE = ("FACILITY_TYPE", "TYPEQU", "BPE_TYPEQU")
 _COL_VAL = ("OBS_VALUE", "NB_EQUIP", "NB")
 
 
+_COL_PERIODE = ("TIME_PERIOD", "AN", "ANNEE")
+_COL_MESURE = ("BPE_MEASURE", "MEASURE")
+
+
 def _normaliser_bpe(df: pd.DataFrame) -> pd.DataFrame:
-    """(code commune, type d'équipement, nombre), équipements de santé (D…) seulement."""
+    """(code commune, type d'équipement, nombre), équipements de santé (D…) seulement.
+
+    Le fichier Melodi peut contenir PLUSIEURS années et PLUSIEURS mesures pour
+    un même équipement : les additionner compterait les soignants en double.
+    On garde l'année la plus récente et une seule mesure (le nombre d'équipements).
+    """
     cols = list(df.columns)
     geo_col, type_col = _pick(cols, *_COL_GEO), _pick(cols, *_COL_TYPE)
     value_col = _pick(cols, *_COL_VAL)
     if not geo_col or not type_col:
         raise ValueError(f"Colonnes BPE non reconnues : {cols[:15]}")
-    types = df[type_col].str.upper()
-    sante = types.str.startswith("D", na=False)
-    df = df[sante]
+    df = df[df[type_col].str.upper().str.startswith("D", na=False)]
+
+    periode_col = _pick(cols, *_COL_PERIODE)
+    if periode_col and df[periode_col].nunique() > 1:
+        periodes = sorted(df[periode_col].dropna().unique())
+        print(f"   BPE : années {periodes} → {periodes[-1]} retenue")
+        df = df[df[periode_col] == periodes[-1]]
+    mesure_col = _pick(cols, *_COL_MESURE)
+    if mesure_col and df[mesure_col].nunique() > 1:
+        df = df[df[mesure_col] == choisir_mesure(df[mesure_col])]
+
     return pd.DataFrame({
         "code": df[geo_col].map(lambda v: parse_geo(v)[0]),
-        "type": types[sante],
+        "type": df[type_col].str.upper(),
         "n": pd.to_numeric(df[value_col], errors="coerce").fillna(1) if value_col else 1.0,
     }).reset_index(drop=True)
+
+
+def choisir_mesure(mesures: pd.Series) -> str:
+    """Parmi plusieurs mesures, celle du nombre d'équipements."""
+    valeurs = sorted(mesures.dropna().unique())
+    choix = next((m for m in valeurs if any(t in str(m).upper() for t in ("NB", "FACILIT", "EQUIP"))),
+                 mesures.mode().iloc[0])
+    print(f"   BPE : mesures {valeurs} → « {choix} » retenue")
+    return choix
 
 
 def telecharger(url: str, essais: int = 3) -> bytes:
@@ -236,7 +262,7 @@ def _bpe_nationale() -> pd.DataFrame:
 
     Seules les colonnes utiles et les équipements de santé sont gardés en mémoire.
     """
-    utiles = {c.upper() for c in (*_COL_GEO, *_COL_TYPE, *_COL_VAL)}
+    utiles = {c.upper() for c in (*_COL_GEO, *_COL_TYPE, *_COL_VAL, *_COL_PERIODE, *_COL_MESURE)}
     erreurs = []
     for ident, url in bpe_file_urls():
         try:
@@ -270,14 +296,13 @@ def _bpe_api(departement: str) -> pd.DataFrame:
         valeur = next(iter(o.get("measures", {}).values()), {}).get("value")
         rows.append({"code": parse_geo(d.get("GEO", ""))[0], "type": str(d.get(type_col, "")).upper(),
                      "mesure": d.get(mesure_col) if mesure_col else None,
+                     "periode": d.get("TIME_PERIOD"),
                      "n": float(valeur) if valeur is not None else 1.0})
     df = pd.DataFrame(rows)
+    if df["periode"].nunique() > 1:
+        df = df[df["periode"] == sorted(df["periode"].dropna().unique())[-1]]
     if mesure_col and df["mesure"].nunique() > 1:
-        mesures = sorted(df["mesure"].dropna().unique())
-        choix = next((m for m in mesures if any(t in str(m).upper() for t in ("NB", "FACILIT", "EQUIP"))),
-                     df["mesure"].mode().iloc[0])
-        print(f"   BPE (API) : mesures {mesures} → « {choix} » retenue")
-        df = df[df["mesure"] == choix]
+        df = df[df["mesure"] == choisir_mesure(df["mesure"])]
     df = df[df["type"].str.startswith("D") & df["code"].notna()]
     print(f"   BPE (API) : {len(df):,} lignes santé pour {departement}")
     return df[["code", "type", "n"]].reset_index(drop=True)
