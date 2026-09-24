@@ -96,6 +96,20 @@ button { font: inherit; cursor: pointer; }
   font-size: 12px; font-weight: 650; color: var(--encre); pointer-events: none; white-space: nowrap;
   text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 5px #fff, 0 0 8px #fff;
 }
+.badge {
+  display: inline-grid; place-items: center; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 4px;
+  color: #fff; font-size: 10px; font-weight: 800; font-style: normal; line-height: 1; border: 1.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.badge sub { font-size: 8px; margin-left: 1px; vertical-align: baseline; }
+.structures { display: flex; gap: 2px; cursor: pointer; }
+.vue-large .structures { gap: 1px; }
+.vue-large .structures .badge { min-width: 8px; width: 8px; height: 8px; padding: 0; font-size: 0; border-width: 1px; border-radius: 50%; }
+.vue-large .structures .badge sub { display: none; }
+.leg-structures { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--trait); }
+.leg-structures span, .fiche-structures span { display: inline-flex; align-items: center; gap: 4px; }
+.fiche-structures { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; font-size: .82rem; color: var(--texte); }
+.case .badge { box-shadow: none; border: 0; }
 .site {
   width: 26px; height: 26px; border-radius: 50%; background: var(--encre); color: #fff;
   display: grid; place-items: center; font-weight: 700; font-size: 13px;

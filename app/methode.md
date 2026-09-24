@@ -36,8 +36,11 @@ et toute pondération serait arbitraire.
 ### Limites assumées
 
 - Distances à vol d'oiseau, pas en temps de trajet.
-- Professionnels comptés par tête, pas en temps d'activité réel ; pharmacies comptées
-  en officines.
+- Généralistes : libéraux **et salariés des centres de santé** (Annuaire Santé, RPPS),
+  comme l'APL de la DREES ; un médecin à plusieurs adresses compte pour une fraction à
+  chacune. Médecins hospitaliers et gardes exclus : on mesure l'accès au médecin traitant.
+- Autres professions : libéraux seulement (Insee, BPE) ; pharmacies comptées en officines.
+- Professionnels comptés par tête, pas en temps d'activité réel.
 - Population non pondérée par l'âge (les plus âgés consultent davantage).
 - Le seuil de sous-dotation est une convention de ce projet, pas le zonage
   réglementaire.

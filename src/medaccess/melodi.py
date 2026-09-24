@@ -175,6 +175,7 @@ _COL_TYPE = ("FACILITY_TYPE", "TYPEQU", "BPE_TYPEQU")
 _COL_VAL = ("OBS_VALUE", "NB_EQUIP", "NB")
 
 
+_COL_NIVEAU = ("GEO_OBJECT",)
 _COL_PERIODE = ("TIME_PERIOD", "AN", "ANNEE")
 _COL_MESURE = ("BPE_MEASURE", "MEASURE")
 
@@ -192,6 +193,16 @@ def _normaliser_bpe(df: pd.DataFrame) -> pd.DataFrame:
     if not geo_col or not type_col:
         raise ValueError(f"Colonnes BPE non reconnues : {cols[:15]}")
     df = df[df[type_col].str.upper().str.startswith("D", na=False)]
+
+    # Le fichier mélange plusieurs niveaux géographiques (commune, bassin de vie,
+    # unité urbaine…) dont certains ont des codes à 5 chiffres identiques à ceux
+    # des communes : le bassin de vie 44154 n'est PAS la commune 44154.
+    niveau_col = _pick(cols, *_COL_NIVEAU)
+    if niveau_col:
+        niveaux = sorted(df[niveau_col].dropna().unique())
+        if len(niveaux) > 1:
+            print(f"   BPE : niveaux géographiques {niveaux} → COM retenu")
+        df = df[df[niveau_col].str.upper() == "COM"]
 
     periode_col = _pick(cols, *_COL_PERIODE)
     if periode_col and df[periode_col].nunique() > 1:
@@ -218,7 +229,7 @@ def choisir_mesure(mesures: pd.Series) -> str:
     return choix
 
 
-def telecharger(url: str, essais: int = 3) -> bytes:
+def telecharger(url: str, essais: int = 3, libelle: str = "BPE") -> bytes:
     """Téléchargement en flux, taille vérifiée : un fichier tronqué est retéléchargé.
 
     (requests ne signale pas toujours une connexion coupée en cours de route ;
@@ -238,7 +249,7 @@ def telecharger(url: str, essais: int = 3) -> bytes:
                     buf.write(bloc)
                 raw = buf.getvalue()
             mo = len(raw) / 1e6
-            print(f"   BPE : {mo:.1f} Mo reçus"
+            print(f"   {libelle} : {mo:.1f} Mo reçus"
                   + (f" / {attendu / 1e6:.1f} Mo annoncés" if attendu else "")
                   + f" ({r.headers.get('Content-Type', '?')})")
             if attendu and len(raw) < attendu:
@@ -248,7 +259,7 @@ def telecharger(url: str, essais: int = 3) -> bytes:
             return raw
         except Exception as exc:  # noqa: BLE001
             derniere = exc
-            print(f"   BPE : essai {essai}/{essais} raté — {exc}")
+            print(f"   {libelle} : essai {essai}/{essais} raté — {exc}")
             time.sleep(5 * essai)
     raise RuntimeError(str(derniere))
 
@@ -262,7 +273,7 @@ def _bpe_nationale() -> pd.DataFrame:
 
     Seules les colonnes utiles et les équipements de santé sont gardés en mémoire.
     """
-    utiles = {c.upper() for c in (*_COL_GEO, *_COL_TYPE, *_COL_VAL, *_COL_PERIODE, *_COL_MESURE)}
+    utiles = {c.upper() for c in (*_COL_GEO, *_COL_TYPE, *_COL_VAL, *_COL_PERIODE, *_COL_MESURE, *_COL_NIVEAU)}
     erreurs = []
     for ident, url in bpe_file_urls():
         try:
@@ -329,6 +340,10 @@ def _codes_sante(bpe: pd.DataFrame) -> dict:
     return dict(types[types.str.startswith("D", na=False)].value_counts().head(20))
 
 
+# Codes BPE (domaine D1) des structures affichées sur la carte
+STRUCTURES = {"msp": "D113", "centres_sante": "D108", "urgences": "D106"}
+
+
 def get_professions(departement: str) -> tuple[pd.DataFrame, dict]:
     """Effectifs par commune pour chaque profession + codes BPE retenus.
 
@@ -356,7 +371,14 @@ def get_professions(departement: str) -> tuple[pd.DataFrame, dict]:
         codes[prof.cle] = code
         effectifs = bpe[bpe["type"] == code].groupby("code")["n"].sum().rename(prof.cle)
         table = table.merge(effectifs, on="code", how="left")
-    rapport = {"codes_bpe": codes, "professions_absentes": absentes}
+    # Structures de soins de ville (affichées sur la carte, pas dans le calcul)
+    trouvees = []
+    for cle, code in STRUCTURES.items():
+        if code in presents:
+            n = bpe[bpe["type"] == code].groupby("code")["n"].sum().rename(cle)
+            table = table.merge(n, on="code", how="left")
+            trouvees.append(cle)
+    rapport = {"codes_bpe": codes, "professions_absentes": absentes, "structures": trouvees}
     if absentes:
         rapport["codes_sante_presents"] = {k: int(v) for k, v in _codes_sante(bpe).items()}
     return table, rapport

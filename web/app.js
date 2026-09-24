@@ -11,11 +11,18 @@
   // Cumul : 0 manque → gris-bleu neutre, puis oranges de plus en plus sombres
   const MANQUES = ["#e3e9f0", "#fdd0a2", "#fd8d3c", "#e6550d", "#a63603", "#6b2204"];
   const CUMUL = "cumul";
+  // Structures de soins affichées sur la carte (pas dans le calcul)
+  const STRUCTURES = {
+    msp: { lettre: "M", libelle: "Maison de santé", pluriel: "Maisons de santé", couleur: "#15803d" },
+    centres_sante: { lettre: "C", libelle: "Centre de santé", pluriel: "Centres de santé", couleur: "#7c3aed" },
+    urgences: { lettre: "U", libelle: "Urgences", pluriel: "Urgences", couleur: "#dc2626" },
+  };
 
   const FMT = new Intl.NumberFormat("fr-FR");
   const nb = (x, d = 0) => new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(x);
   const $ = (s) => document.querySelector(s);
   const echapper = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const eff = (x) => nb(x, Number.isInteger(x) ? 0 : 1);   // 2,5 = médecin partagé entre deux lieux
   const pluriel = (n, mot) => `${mot}${n > 1 ? "s" : ""}`;
 
   function couleur(ratio) {
@@ -117,6 +124,9 @@
     if (!etat.parCle[etat.vue] && etat.vue !== CUMUL) etat.vue = etat.profs[0].cle;
     etat.profSim = etat.parCle[etat.profSim] ? etat.profSim : etat.profs[0].cle;
     etat.base = MedCalc.preparer(etat.communes);
+    etat.structures = (data.structures || []).filter((k) => STRUCTURES[k]);
+    if (!etat.structuresAff) etat.structuresAff = new Set(etat.structures);
+    construireStructures();
 
     const nomDep = data.nom || `Département ${data.departement}`;
     $("#nom-dep").textContent = `${nomDep} (${data.departement})`;
@@ -124,7 +134,8 @@
     document.title = `MedAccess · ${nomDep}`;
     $("#bandeau-demo").hidden = !data.demo;
     $("#sources").innerHTML = `${echapper(data.source || "")}. Données du ${echapper(data.genere_le || "")}.
-      Effectifs : Insee, Base permanente des équipements. Contours © IGN, populations © Insee,
+      Effectifs : ${echapper(data.source_generalistes ? `généralistes : ${data.source_generalistes} ; autres professions : ` : "")}Insee,
+      Base permanente des équipements (libéraux). Contours © IGN, populations © Insee,
       fond de carte © IGN (Plan IGN).`;
     $("#seuil").value = Math.round(etat.ratio * 100);
     $("#recherche").value = "";
@@ -203,7 +214,18 @@
     ].join("");
   }
 
+  function legendeStructures() {
+    const k = etat.structures.filter((x) => etat.structuresAff.has(x));
+    if (!k.length) return "";
+    return `<div class="leg-structures">${k.map((x) => `<span><i class="badge" style="background:${STRUCTURES[x].couleur}">${STRUCTURES[x].lettre}</i>${STRUCTURES[x].libelle}</span>`).join("")}</div>`;
+  }
+
   function rendreLegende() {
+    rendreLegendeBase();
+    $("#legende").insertAdjacentHTML("beforeend", legendeStructures());
+  }
+
+  function rendreLegendeBase() {
     const p = profActive();
     if (!p) {
       const n = etat.cumul.size;
@@ -231,7 +253,7 @@
     const c = etat.communes[i];
     const p = profActive();
     const val = p ? nb(ligne(p.cle, i).acces_10k, 1) : `${etat.manques[i]}/${etat.cumul.size}`;
-    const sous = p ? `${FMT.format(c.population)} hab. · ${c[p.cle]} ${pluriel(c[p.cle], p.unite)}`
+    const sous = p ? `${FMT.format(c.population)} hab. · ${eff(c[p.cle])} ${pluriel(c[p.cle], p.unite)}`
       : `${FMT.format(c.population)} hab. · ${nomsManques(i) || "aucun manque"}`;
     return `<li data-code="${c.code}"><span class="pastille-couleur" style="background:${pastilleCommune(i)}"></span>
       <span class="nom">${echapper(c.nom)}<span class="sous">${sous}</span></span><span class="val">${val}</span></li>`;
@@ -275,17 +297,27 @@
         <span class="profil-nom">${p.libelle} ${alerte}</span>
         <span class="profil-val"><b>${nb(r.acces_10k, 1)}</b> <span class="dim">/ moy. ${nb(ev.moyenne, 1)}</span></span>
         <span class="profil-barre"><i style="width:${largeur}%;background:${couleur(r.acces_10k / ev.seuil)}"></i><em style="left:${repere}%"></em></span>
-        <span class="profil-sous">${c[p.cle]} sur place</span></button>`;
+        <span class="profil-sous">${eff(c[p.cle])} sur place</span></button>`;
     }).join("");
     const m = MedCalc.manques(etat.evals, etat.profs.map((p) => p.cle), etat.base.n)[i];
     el.className = "fiche";
     el.innerHTML = `<button class="fermer" aria-label="Fermer">×</button><h2>${echapper(c.nom)}</h2>
       <div class="dim">${FMT.format(c.population)} habitants · <b style="color:${m ? "#9a3412" : "#1e40af"}">${m} ${pluriel(m, "manque")}</b> sur ${etat.profs.length}</div>
+      ${ligneStructures(c)}
       <div class="profils">${barres}</div>
       <p class="aide">Accès pour 10 000 habitants ; le trait marque le seuil de sous-dotation.</p>`;
     el.hidden = false;
     el.querySelector(".fermer").onclick = () => selectionner(null);
     el.querySelectorAll(".profil").forEach((b) => (b.onclick = () => choisirVue(b.dataset.cle)));
+  }
+
+  function ligneStructures(c) {
+    const k = etat.structures.filter((x) => c[x]);
+    if (!k.length) return "";
+    return `<div class="fiche-structures">${k.map((x) => {
+      const s = STRUCTURES[x], n = c[x];
+      return `<span><i class="badge" style="background:${s.couleur}">${s.lettre}</i>${n > 1 && x !== "urgences" ? `${n} ${s.pluriel.toLowerCase()}` : s.libelle}</span>`;
+    }).join("")}</div>`;
   }
 
   function rendreSimulateur() {
@@ -373,7 +405,7 @@
       if (i < 0 || matchMedia("(hover: none)").matches) return;
       const c = etat.communes[i], p = profActive();
       const corps = p
-        ? `Accès : <b>${nb(ligne(p.cle, i).acces_10k, 1)}</b> / 10 000<br><span class="dim">${c[p.cle]} ${pluriel(c[p.cle], p.unite)} · ${FMT.format(c.population)} hab.</span>`
+        ? `Accès : <b>${nb(ligne(p.cle, i).acces_10k, 1)}</b> / 10 000<br><span class="dim">${eff(c[p.cle])} ${pluriel(c[p.cle], p.unite)} · ${FMT.format(c.population)} hab.</span>`
         : `<b>${etat.manques[i]}</b> ${pluriel(etat.manques[i], "manque")}<br><span class="dim">${nomsManques(i) || "aucun"}</span>`;
       popup.setLngLat(e.lngLat).setHTML(`<b>${echapper(c.nom)}</b><br>${corps}`).addTo(carte);
     });
@@ -382,6 +414,11 @@
       survol = null; popup.remove(); carte.getCanvas().style.cursor = "";
     });
     carte.on("click", "communes", (e) => selectionner(e.features[0].properties.code));
+    // Vue d'ensemble : les structures en simples points ; lettres en zoomant
+    const echelleStructures = () => $("#carte").classList.toggle("vue-large", carte.getZoom() < (grandEcran() ? 8 : 9));
+    carte.on("zoom", echelleStructures);
+    carte.on("load", echelleStructures);
+    carte.on("moveend", echelleStructures);
 
     // « style.load » plutôt que « load » : la carte s'affiche même si le fond de
     // carte ne répond pas (hors ligne, réseau filtré). Les communes sont locales.
@@ -392,6 +429,7 @@
       colorerCarte();
       cadrer(false);
       placerVilles();
+      placerStructures();
       $("#chargement").classList.add("fini");
       // Mention des sources repliée (bouton « i ») pour ne pas masquer la carte
       document.querySelectorAll(".maplibregl-ctrl-attrib").forEach((el) => el.classList.remove("maplibregl-compact-show"));
@@ -437,8 +475,41 @@
     colorerCarte();
     placerSites();
     placerVilles();
+    placerStructures();
     cadrer(false);
     $("#chargement").classList.add("fini");
+  }
+
+  let marqueursStructures = [];
+  function placerStructures() {
+    marqueursStructures.forEach((m) => m.remove());
+    marqueursStructures = [];
+    if (!carte) return;
+    const aff = etat.structures.filter((x) => etat.structuresAff.has(x));
+    if (!aff.length) return;
+    etat.communes.forEach((c) => {
+      const k = aff.filter((x) => c[x]);
+      if (!k.length) return;
+      const el = document.createElement("div");
+      el.className = "structures";
+      el.title = `${c.nom} : ` + k.map((x) => `${c[x] > 1 && x !== "urgences" ? c[x] + " " : ""}${STRUCTURES[x].libelle.toLowerCase()}`).join(", ");
+      el.innerHTML = k.map((x) => `<i class="badge" style="background:${STRUCTURES[x].couleur}">${STRUCTURES[x].lettre}${c[x] > 1 && x !== "urgences" ? `<sub>${c[x]}</sub>` : ""}</i>`).join("");
+      el.onclick = (ev) => { ev.stopPropagation(); selectionner(c.code); };
+      marqueursStructures.push(new maplibregl.Marker({ element: el, anchor: "top", offset: [0, 7] })
+        .setLngLat([c.lon, c.lat]).addTo(carte));
+    });
+  }
+
+  function construireStructures() {
+    const bloc = $("#bloc-structures");
+    bloc.hidden = !etat.structures.length;
+    $("#cases-structures").innerHTML = etat.structures.map((x) =>
+      `<label class="case"><input type="checkbox" value="${x}"${etat.structuresAff.has(x) ? " checked" : ""}>
+        <i class="badge" style="background:${STRUCTURES[x].couleur}">${STRUCTURES[x].lettre}</i> ${STRUCTURES[x].pluriel}</label>`).join("");
+    $("#cases-structures").querySelectorAll("input").forEach((c) => (c.onchange = () => {
+      if (c.checked) etat.structuresAff.add(c.value); else etat.structuresAff.delete(c.value);
+      placerStructures(); rendreLegende();
+    }));
   }
 
   let marqueursVilles = [];

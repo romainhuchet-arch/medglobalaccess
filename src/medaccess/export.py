@@ -31,9 +31,18 @@ from .professions import get as get_profession
 WEB_DATA = Path(__file__).resolve().parents[2] / "web" / "data"
 
 
+def _effectif(x) -> float | int:
+    """Entier si possible ; sinon 1 décimale (médecins partagés entre plusieurs lieux)."""
+    x = round(float(x), 1)
+    return int(x) if x.is_integer() else x
+
+
 def build(departement: str) -> dict:
     df, geojson, report = load(departement)
     profs = disponibles(df)
+    from .melodi import STRUCTURES
+
+    structures = [c for c in STRUCTURES if c in df.columns]
     lookup = df.set_index("code")
     features = []
     for f in geojson["features"]:
@@ -46,7 +55,8 @@ def build(departement: str) -> dict:
             "properties": {
                 "code": code, "nom": str(r["nom"]),
                 "population": int(r["population"]),
-                **{cle: int(r[cle]) for cle in profs},
+                **{cle: _effectif(r[cle]) for cle in profs},
+                **{cle: int(r[cle]) for cle in structures if r[cle] > 0},
                 "lon": round(float(r["lon"]), 5), "lat": round(float(r["lat"]), 5),
             },
             "geometry": f["geometry"],
@@ -56,6 +66,7 @@ def build(departement: str) -> dict:
         "nom": nom_departement(departement),
         "demo": bool(report.get("demo")),
         "source": report.get("source"),
+        "source_generalistes": report.get("source_generalistes"),
         "genere_le": dt.date.today().isoformat(),
         "parametres": {"seuil_ratio": settings.seuil_ratio},
         "professions": [
@@ -63,6 +74,7 @@ def build(departement: str) -> dict:
             for p in map(get_profession, profs)
         ],
         "codes_bpe": report.get("codes_bpe"),
+        "structures": structures,
         "contour": contour_departement(geojson),
         "communes": {"type": "FeatureCollection", "features": features},
     }

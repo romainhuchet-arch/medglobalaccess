@@ -76,6 +76,13 @@
               Les professions ne s'additionnent pas : un dentiste ne remplace pas un généraliste.</p>
           </div>
 
+          <div class="bloc" id="bloc-structures" hidden>
+            <div class="bloc-titre">Afficher sur la carte</div>
+            <div class="cases" id="cases-structures"></div>
+            <p class="aide">Repères seulement : ces structures ne changent pas le calcul. Leurs soignants
+              sont déjà comptés dans les professions.</p>
+          </div>
+
           <details class="bloc reglages">
             <summary>Réglages</summary>
             <label>Sous-dotée en dessous de <output id="val-seuil"></output>
@@ -138,7 +145,11 @@
           <h3>Limites</h3>
           <ul>
             <li>Distances à vol d'oiseau, pas en temps de trajet.</li>
-            <li>Professionnels comptés par tête, pas en équivalent temps plein ; pharmacies comptées en officines.</li>
+            <li>Généralistes : libéraux et salariés des centres de santé (Annuaire Santé) ; un médecin
+              à plusieurs adresses compte pour une fraction à chacune. Médecins hospitaliers et
+              gardes exclus : on mesure l'accès au médecin traitant.</li>
+            <li>Autres professions : libéraux seulement (Insee, BPE) ; pharmacies comptées en officines.</li>
+            <li>Professionnels comptés par tête, pas en équivalent temps plein.</li>
             <li>Population non pondérée par l'âge.</li>
             <li>Seuils : conventions de travail ; le zonage officiel des médecins repose sur l'APL (DREES).</li>
           </ul>

@@ -92,7 +92,8 @@ Le simulateur classe plutôt selon :
 | Donnée | Source | Accès |
 |---|---|---|
 | Population municipale | Melodi `DS_POPULATIONS_REFERENCE`, filtre `GEO=DEP-44*COM` | API, 30 req/min |
-| Soignants par commune (5 professions) | Melodi, fichier BPE (dernier millésime, lu dans le catalogue) | Téléchargement CSV |
+| Généralistes (libéraux + centres de santé) | Annuaire Santé, extraction RPPS `PS_LibreAcces` (ANS) ; repli BPE | Téléchargement zip |
+| Autres soignants (libéraux) | Melodi, fichier BPE (dernier millésime, niveau `COM` seulement) | Téléchargement CSV |
 | Contours et centres | geo.api.gouv.fr (`geometry=contour`), repli Géoplateforme IGN (WFS Admin Express) | API |
 
 **Millésime du COG.** Melodi renvoie des codes du type `2025-COM-44109` : le
@@ -100,6 +101,20 @@ millésime du code officiel géographique est embarqué. Les communes fusionnent
 chaque année ; si population, BPE et contours ne sont pas au même millésime,
 des communes ne se joignent pas. Le pipeline **produit un rapport de jointure**
 (communes sans population, codes BPE non appariés) au lieu de masquer le problème.
+
+**Généralistes (RPPS).** La BPE ne compte que les libéraux. L'Annuaire Santé ajoute
+les généralistes salariés des centres de santé, comme l'APL de la DREES. Règles :
+profession médecin (`10`) sans spécialité autre que la médecine générale (SM26, SM53,
+SM54) ; lieux de soins de ville (cabinets SA07/SA08/SA09, maison de santé SA52, centre
+de santé SA05) ; hôpitaux et permanence des soins exclus ; un médecin à plusieurs
+adresses compte pour une fraction à chacune. `SOURCE_GENERALISTES=bpe` revient à la BPE.
+
+**Structures sur la carte.** Maisons de santé (BPE D113), centres de santé (D108) et
+services d'urgences (D106) sont affichés comme repères, avec une case à cocher chacun.
+Ils ne changent pas le calcul : leurs soignants sont déjà comptés dans les professions.
+
+**Niveaux géographiques BPE.** Le fichier Melodi mélange communes et bassins de vie,
+dont les codes à 5 chiffres se ressemblent : seules les lignes `GEO_OBJECT=COM` sont gardées.
 
 **Codes BPE.** La nomenclature de la BPE a été refondue : pour chaque profession,
 le premier code présent parmi les candidats (tableau ci-dessus) est retenu et

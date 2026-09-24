@@ -36,6 +36,20 @@ def build_real(departement: str) -> tuple[pd.DataFrame, dict, dict]:
     communes, geojson = step("contours (geo.api.gouv.fr)", get_communes)
     pop = step("population (Melodi)", get_population)
     gp, rapport_bpe = step("professionnels de santé (Melodi BPE)", get_professions)
+    rapport_bpe["source_generalistes"] = "BPE Insee (libéraux)"
+
+    # Généralistes : Annuaire Santé (libéraux + centres de santé) si disponible
+    from . import rpps
+
+    if rpps.actif():
+        try:
+            mg = rpps.get_generalistes(departement)
+            gp = gp.drop(columns=["generalistes"]).merge(mg, on="code", how="outer")
+            rapport_bpe["codes_bpe"]["generalistes"] = "RPPS"
+            rapport_bpe["source_generalistes"] = "Annuaire Santé RPPS (libéraux + centres de santé)"
+            print(f"   ✓ généralistes (Annuaire Santé) : {mg['generalistes'].sum():.0f}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"   ⚠️  Annuaire Santé indisponible ({exc}) → généralistes de la BPE (libéraux)")
 
     df = communes.merge(pop[["code", "population", "millesime_cog"]], on="code", how="left")
     df = df.merge(gp, on="code", how="left")
@@ -53,7 +67,7 @@ def build_real(departement: str) -> tuple[pd.DataFrame, dict, dict]:
 
     # Repli sur la population fournie par geo.api.gouv.fr si Melodi n'a rien
     df["population"] = df["population"].fillna(df["population_geo"]).fillna(0)
-    for cle in rapport_bpe["codes_bpe"]:
+    for cle in [*rapport_bpe["codes_bpe"], *rapport_bpe.get("structures", [])]:
         df[cle] = df[cle].fillna(0)
     df = df.drop(columns=["population_geo"])
     return df, geojson, report
@@ -118,11 +132,22 @@ def build_synthetic(departement: str = "44") -> tuple[pd.DataFrame, dict, dict]:
         terr = terr / np.average(terr, weights=df["population"])
         rate_p = df["population"] / hab * np.clip(log_pop - s0, bas, haut) * terr
         df[cle] = rng.poisson(rate_p).astype(float)
+    # Structures simulées (maisons et centres de santé, urgences) : plus probables
+    # dans les communes déjà dotées en généralistes et dans les villes.
+    p_msp = np.clip(0.06 * df["generalistes"], 0, 0.8)
+    df["msp"] = (rng.random(len(df)) < p_msp).astype(float)
+    df["centres_sante"] = (rng.random(len(df)) < np.clip((log_pop - 3.7) * 0.6, 0, 0.9)).astype(float)
+    df["urgences"] = (df["population"].rank(ascending=False) <= 4).astype(float)
     df["millesime_cog"] = None
 
     report = {"source": "démonstration (contours et populations réels, effectifs de soignants simulés)",
               "communes_contours": len(df), "departement_demo": "44", "demo": True}
     return df, geojson, report
+
+
+# À incrémenter quand la façon de lire les sources change : un cache plus
+# ancien est alors ignoré et les données sont retéléchargées.
+VERSION_CACHE = 6   # 6 : structures (maisons et centres de santé, urgences)
 
 
 def load(departement: str | None = None, use_cache: bool = True) -> tuple[pd.DataFrame, dict, dict]:
@@ -135,7 +160,9 @@ def load(departement: str | None = None, use_cache: bool = True) -> tuple[pd.Dat
 
     if use_cache and cache.exists():
         payload = json.loads(cache.read_text(encoding="utf-8"))
-        return pd.DataFrame(payload["communes"]), payload["geojson"], payload["report"]
+        if payload.get("version") == VERSION_CACHE:
+            return pd.DataFrame(payload["communes"]), payload["geojson"], payload["report"]
+        print(f"   cache {cache.name} obsolète → données retéléchargées")
 
     try:
         df, geojson, report = build_real(departement)
@@ -146,9 +173,14 @@ def load(departement: str | None = None, use_cache: bool = True) -> tuple[pd.Dat
         print(f"⚠️  Échec {exc}\n   → repli sur les données SYNTHÉTIQUES (la carte ne sera pas réelle).")
         return build_synthetic(departement)
 
+    from . import rpps
+
+    if rpps.actif() and "RPPS" not in str(report.get("source_generalistes")):
+        # Repli BPE : on ne fige pas ce résultat, l'Annuaire sera réessayé au prochain lancement
+        return df, geojson, report
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(
-        json.dumps({"communes": df.to_dict("records"), "geojson": geojson, "report": report}),
+        json.dumps({"version": VERSION_CACHE, "communes": df.to_dict("records"), "geojson": geojson, "report": report}),
         encoding="utf-8",
     )
     return df, geojson, report

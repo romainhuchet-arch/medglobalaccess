@@ -61,7 +61,7 @@ def test_get_generalistes_detects_columns(monkeypatch):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("bpe.csv", csv)
-    monkeypatch.setattr(melodi, "_get", lambda url, params=None: _Resp(content=buf.getvalue()))
+    monkeypatch.setattr(melodi, "telecharger", lambda url: buf.getvalue())
     monkeypatch.setattr(settings, "bpe_file_id", "DS_BPE_TEST")
 
     gp = melodi.get_generalistes("44").set_index("code")["generalistes"]
@@ -168,7 +168,7 @@ def test_unknown_bpe_code_lists_alternatives(monkeypatch):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("bpe.csv", csv)
-    monkeypatch.setattr(melodi, "_get", lambda url, params=None: _Resp(content=buf.getvalue()))
+    monkeypatch.setattr(melodi, "telecharger", lambda url: buf.getvalue())
     monkeypatch.setattr(settings, "bpe_file_id", "X")
     with pytest.raises(ValueError, match="D290"):
         melodi.get_generalistes("44")
@@ -241,7 +241,7 @@ def test_get_professions_picks_codes_and_reports_missing(monkeypatch):
     consigné ; une profession introuvable est signalée sans bloquer."""
     lignes = ("2025-COM-44109;D265;10\n2025-COM-44109;D307;4\n2025-COM-44001;D307;1\n"
               "2025-COM-44109;D277;6\n2025-COM-44001;D233;2\n2025-COM-35238;D265;50\n")
-    monkeypatch.setattr(melodi, "_get", lambda url, params=None: _Resp(content=_bpe_zip(lignes)))
+    monkeypatch.setattr(melodi, "telecharger", lambda url: _bpe_zip(lignes))
     monkeypatch.setattr(settings, "bpe_file_id", "X")
     table, rapport = melodi.get_professions("44")
     t = table.set_index("code")
@@ -331,3 +331,58 @@ def test_lire_tableau_accepte_zip_gzip_et_csv_brut():
         assert list(df.columns) == ["GEO", "FACILITY_TYPE", "OBS_VALUE"]
     with pytest.raises(ValueError, match="Réponse inattendue"):
         melodi.lire_tableau(b"<html>maintenance</html>")
+
+
+def test_bpe_repli_sur_api_si_fichier_illisible(monkeypatch):
+    """Fichier national corrompu → l'API de données Melodi prend le relais."""
+    def zip_tronque(url):
+        raise OSError("zip incomplet")
+
+    obs = [{"dimensions": {"GEO": "2025-COM-44109", "FACILITY_TYPE": t, "BPE_MEASURE": m},
+            "measures": {"OBS_VALUE_NIVEAU": {"value": v}}}
+           for t, m, v in [("D265", "NB_EQUIP", 7), ("D265", "AUTRE", 99), ("D307", "NB_EQUIP", 2),
+                           ("B101", "NB_EQUIP", 5)]]
+    monkeypatch.setattr(settings, "bpe_file_id", "X")
+    monkeypatch.setattr(melodi, "telecharger", zip_tronque)
+    monkeypatch.setattr(melodi, "get_observations", lambda ds, **f: obs)
+    table, rapport = melodi.get_professions("44")
+    t = table.set_index("code")
+    assert t.loc["44109", "generalistes"] == 7      # mesure « AUTRE » non additionnée
+    assert t.loc["44109", "pharmacies"] == 2
+    assert rapport["codes_bpe"]["generalistes"] == "D265"
+
+
+def test_bpe_ne_compte_pas_en_double(monkeypatch):
+    """Plusieurs années et plusieurs mesures dans le fichier : pas d'addition."""
+    csv = ("GEO;FACILITY_TYPE;BPE_MEASURE;TIME_PERIOD;OBS_VALUE\n"
+           "2025-COM-44154;D265;FACILITIES;2024;12\n"
+           "2025-COM-44154;D265;FACILITIES;2023;11\n"
+           "2025-COM-44154;D265;AUTRE;2024;12\n")
+    monkeypatch.setattr(settings, "bpe_file_id", "X")
+    monkeypatch.setattr(melodi, "telecharger", lambda url: csv.encode())
+    table, _ = melodi.get_professions("44")
+    assert table.set_index("code").loc["44154", "generalistes"] == 12
+
+
+def test_bpe_ignore_les_bassins_de_vie():
+    """Cas réel (BPE 2025) : le bassin de vie 44154 (19) ≠ la commune 44154 (4)."""
+    csv = ("GEO;GEO_OBJECT;FACILITY_DOM;FACILITY_SDOM;FACILITY_TYPE;BPE_MEASURE;"
+           "UNIT_MULT;UNIT_MEASURE;OBS_STATUS;TIME_PERIOD;OBS_VALUE\n"
+           "44154;BV2022;D;D2;D265;FACILITIES;0;NR;A;2025;19\n"
+           "44154;COM;D;D2;D265;FACILITIES;0;NR;A;2025;4\n"
+           "44;DEP;D;D2;D265;FACILITIES;0;NR;A;2025;1500\n")
+    bpe = melodi._normaliser_bpe(melodi.lire_tableau(csv.encode()))
+    assert bpe.groupby("code")["n"].sum().to_dict() == {"44154": 4}
+
+
+def test_structures_de_soins(monkeypatch):
+    """Maisons et centres de santé, urgences : comptés par commune pour la carte."""
+    lignes = ("2025-COM-44154;D265;4\n2025-COM-44154;D113;1\n2025-COM-44154;D108;1\n"
+              "2025-COM-44131;D265;22\n2025-COM-44131;D106;1\n2025-COM-44131;D113;2\n")
+    monkeypatch.setattr(melodi, "telecharger", lambda url: _bpe_zip(lignes))
+    monkeypatch.setattr(settings, "bpe_file_id", "X")
+    table, rapport = melodi.get_professions("44")
+    t = table.set_index("code").fillna(0)
+    assert rapport["structures"] == ["msp", "centres_sante", "urgences"]
+    assert t.loc["44154", "msp"] == 1 and t.loc["44154", "centres_sante"] == 1
+    assert t.loc["44131", "msp"] == 2 and t.loc["44131", "urgences"] == 1

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # au fil des refontes de la BPE.
     bpe_code_generaliste: str = "D265"
 
+    # Généralistes : "rpps" = Annuaire Santé (libéraux + centres de santé, comme
+    # la DREES), repli automatique sur la BPE (libéraux seulement) ; "bpe" = BPE.
+    source_generalistes: str = "rpps"
+
     request_timeout: int = 60
     melodi_max_per_minute: int = 30  # quota documenté de l'API Melodi
 
